@@ -1,0 +1,717 @@
+"""
+================================================================================
+    Automated JUnit Testing System for Student Submissions
+    
+    This application automates the process of:
+    - Scanning student homework submissions
+    - Extracting and compiling Java files
+    - Running JUnit tests
+    - Collecting grades and generating CSV reports
+    - Organizing processed submissions
+================================================================================
+"""
+
+import os
+import re
+import zipfile
+import shutil
+import subprocess
+import csv
+
+
+# ============================================================================
+#  Configuration & Constants
+# ============================================================================
+
+class Colors:
+    """ANSI color codes for terminal output formatting"""
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    BLUE = '\033[94m'
+    RESET = '\033[0m'
+
+
+class Config:
+    """Application configuration constants"""
+    JDK_BIN = r"C:\Program Files\JetBrains\IntelliJ IDEA 2025.2.4\jbr\bin"
+    HOMEWORKS_DIR = "Homeworks"
+    TESTS_DIR = "tests"
+    LIB_DIR = "lib"
+    OUTPUT_DIR = "output"
+    TEMP_DIR = "temp_dir"
+    DONE_DIR = "done"
+    TEST_FILE = "TestInTheSky.java"
+    JUNIT_JAR = "junit-platform-console-standalone-1.14.1.jar"
+    GRADES_CSV = "grades.csv"
+    JAVA_VERSION = "21"
+
+
+# ============================================================================
+#  Utility Functions
+# ============================================================================
+
+def extract_student_name(folder_name):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Extract Student Name                                                ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Extracts the student name from the folder name format:              ║
+    ║  "FirstName LastName_ID_assignsubmission_file"                       ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      folder_name (str): The folder name to parse                     ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      str: The student name (text before first underscore)            ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    return folder_name.split('_')[0]
+
+
+def find_matriculation_number(folder_path):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Find Matriculation Number                                           ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Searches for an 8-digit matriculation number in the folder.        ║
+    ║  First tries to find it with underscore prefix (_12345678),          ║
+    ║  then without underscore if not found.                               ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      folder_path (str): Path to the student's folder                 ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      str: The matriculation number, or None if not found             ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    pattern_with_underscore = r'_(\d{8})'
+    pattern_without_underscore = r'\d{8}'
+    
+    # Try with underscore prefix first
+    for item in os.listdir(folder_path):
+        match = re.search(pattern_with_underscore, item)
+        if match:
+            return match.group(1)
+    
+    # Try without underscore
+    for item in os.listdir(folder_path):
+        match = re.search(pattern_without_underscore, item)
+        if match:
+            return match.group(0)
+    
+    return None
+
+
+def determine_submission_type(folder_path):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Determine Submission Type                                           ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Analyzes the folder contents to determine submission type.          ║
+    ║  Priority: Zipped files > Text files > Folders > Unknown             ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      folder_path (str): Path to the student's folder                 ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      tuple: (submission_type, color_code)                            ║
+    ║          - "Zipped file" (YELLOW)                                    ║
+    ║          - "Text file" (GREEN)                                       ║
+    ║          - "Folder" (BLUE)                                           ║
+    ║          - "Unknown/Other file" (RED)                                ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    for item in os.listdir(folder_path):
+        item_path = os.path.join(folder_path, item)
+        
+        # Skip extracted folder from previous runs
+        if item == 'extracted':
+            continue
+        
+        # Check for zip files (highest priority)
+        if item.endswith(('.zip', '.rar', '.7z')):
+            return "Zipped file", Colors.YELLOW
+        
+        # Check for text files
+        elif item.endswith('.txt'):
+            return "Text file", Colors.GREEN
+        
+        # Check for folders
+        elif os.path.isdir(item_path):
+            return "Folder", Colors.BLUE
+    
+    return "Unknown/Other file", Colors.RED
+
+
+def search_student_directory(folder_path, folder_name):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Search Student Directory                                            ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Analyzes a student's submission folder to extract:                  ║
+    ║  - Student name                                                      ║
+    ║  - Matriculation number                                              ║
+    ║  - Submission type                                                   ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      folder_path (str): Full path to student's folder                ║
+    ║      folder_name (str): Name of the folder                           ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      dict: Student information containing:                           ║
+    ║          - name: Student name                                        ║
+    ║          - matriculation: Matriculation number                       ║
+    ║          - submission_type: Type of submission                       ║
+    ║          - color: Color code for display                             ║
+    ║          - folder_path: Path to folder                               ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    student_name = extract_student_name(folder_name)
+    matriculation_nr = find_matriculation_number(folder_path)
+    submission_type, submission_color = determine_submission_type(folder_path)
+    
+    return {
+        'name': student_name,
+        'matriculation': matriculation_nr if matriculation_nr else 'Not found',
+        'submission_type': submission_type,
+        'color': submission_color,
+        'folder_path': folder_path
+    }
+
+
+# ============================================================================
+#  Java Compilation & Testing Functions
+# ============================================================================
+
+def verify_java_installation():
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Verify Java Installation                                            ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Checks if Java executables (java.exe and javac.exe) exist at       ║
+    ║  the configured JDK path.                                            ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      tuple: (java_exe_path, javac_exe_path) or (None, None) if fail ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    java_exe = os.path.join(Config.JDK_BIN, "java.exe")
+    javac_exe = os.path.join(Config.JDK_BIN, "javac.exe")
+    
+    if not os.path.exists(java_exe) or not os.path.exists(javac_exe):
+        print(f"{Colors.RED}Java executables not found at: {Config.JDK_BIN}{Colors.RESET}")
+        print("Please verify the JDK path in config/settings.py")
+        return None, None
+    
+    return java_exe, javac_exe
+
+
+def prepare_test_environment(temp_dir):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Prepare Test Environment                                            ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Copies test file and verifies JUnit JAR exists.                     ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      temp_dir (str): Path to temporary directory                     ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      bool: True if setup successful, False otherwise                 ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    # Copy test file
+    test_path = os.path.join(Config.TESTS_DIR, Config.TEST_FILE)
+    if not os.path.exists(test_path):
+        print(f"{Colors.RED}Test file not found: {test_path}{Colors.RESET}")
+        return False
+    
+    shutil.copy2(test_path, os.path.join(temp_dir, Config.TEST_FILE))
+    print(f"Copied test file: {Config.TEST_FILE}")
+    
+    # Verify JUnit JAR exists
+    junit_jar_path = os.path.join(Config.LIB_DIR, Config.JUNIT_JAR)
+    if not os.path.exists(junit_jar_path):
+        print(f"{Colors.YELLOW}JUnit JAR not found: {junit_jar_path}{Colors.RESET}")
+        print(f"Please download {Config.JUNIT_JAR}")
+        print(f"Place it in: {os.path.join(os.getcwd(), Config.LIB_DIR)}")
+        return False
+    
+    return True
+
+
+def compile_java_files(temp_dir, javac_exe):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Compile Java Files                                                  ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Compiles all Java files in the temporary directory with JUnit       ║
+    ║  in the classpath. Outputs .class files to a separate bin directory. ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      temp_dir (str): Path to temporary directory                     ║
+    ║      javac_exe (str): Path to javac executable                       ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      tuple: (success: bool, bin_dir: str)                            ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    java_files = [f for f in os.listdir(temp_dir) if f.endswith('.java')]
+    if not java_files:
+        print("No Java files to compile.")
+        return False, None
+    
+    # Create bin directory for compiled classes
+    bin_dir = os.path.join(temp_dir, 'bin')
+    os.makedirs(bin_dir, exist_ok=True)
+    
+    print(f"\nCompiling {len(java_files)} Java file(s)...")
+    print(f"Source files: {temp_dir}")
+    print(f"Output directory: {bin_dir}")
+    
+    # Get JUnit JAR path from lib directory
+    junit_jar = os.path.join(Config.LIB_DIR, Config.JUNIT_JAR)
+    
+    compile_cmd = [
+        javac_exe, '-cp', f'{temp_dir};{junit_jar}',
+        '-d', bin_dir,
+        '--enable-preview', '--source', Config.JAVA_VERSION
+    ] + [os.path.join(temp_dir, f) for f in java_files]
+    
+    result = subprocess.run(compile_cmd, capture_output=True, text=True)
+    
+    if result.returncode != 0:
+        print(f"{Colors.RED}Compilation failed:{Colors.RESET}")
+        print(result.stderr)
+        return False, None
+    
+    print(f"{Colors.GREEN}Compilation successful!{Colors.RESET}")
+    return True, bin_dir
+
+
+def execute_junit_tests(temp_dir, bin_dir, java_exe):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Execute JUnit Tests                                                 ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Runs JUnit tests on the compiled classes and displays results.      ║
+    ║  Sets console to UTF-8 encoding for proper text display.            ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      temp_dir (str): Path to temporary directory                     ║
+    ║      bin_dir (str): Path to compiled classes directory               ║
+    ║      java_exe (str): Path to java executable                         ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      bool: True if tests passed, False otherwise                     ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    print(f"\nRunning tests...")
+    
+    # Set console to UTF-8 encoding for proper text display
+    subprocess.run(['chcp', '65001'], shell=True, capture_output=True)
+    
+    # Get JUnit JAR path from lib directory
+    junit_jar = os.path.join(Config.LIB_DIR, Config.JUNIT_JAR)
+    
+    run_cmd = [
+        java_exe, '-jar', junit_jar, 'execute',
+        '--class-path', bin_dir, '--scan-class-path'
+    ]
+    result = subprocess.run(run_cmd, capture_output=True, text=True, encoding='utf-8')
+    
+    print(result.stdout)
+    if result.stderr:
+        print(result.stderr)
+    
+    # Check if tests passed
+    if 'successful' in result.stdout.lower():
+        print(f"\n{Colors.GREEN}✓ Tests passed!{Colors.RESET}")
+        return True
+    else:
+        print(f"\n{Colors.RED}✗ Tests failed!{Colors.RESET}")
+        return False
+
+
+def run_junit_tests(temp_dir, student_info):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Run JUnit Tests (Main Orchestrator)                                 ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Orchestrates the entire testing process:                            ║
+    ║  1. Verify Java installation                                         ║
+    ║  2. Prepare test environment                                         ║
+    ║  3. Compile Java files to separate bin directory                     ║
+    ║  4. Execute JUnit tests                                              ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      temp_dir (str): Path to temporary directory                     ║
+    ║      student_info (dict): Student information                        ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    try:
+        # Step 1: Verify Java installation
+        java_exe, javac_exe = verify_java_installation()
+        if not java_exe or not javac_exe:
+            return
+        
+        # Step 2: Prepare test environment
+        if not prepare_test_environment(temp_dir):
+            return
+        
+        # Step 3: Compile Java files
+        success, bin_dir = compile_java_files(temp_dir, javac_exe)
+        if not success:
+            return
+        
+        # Step 4: Execute tests
+        execute_junit_tests(temp_dir, bin_dir, java_exe)
+        
+    except FileNotFoundError as e:
+        print(f"{Colors.RED}Command not found: {str(e)}{Colors.RESET}")
+        print("Please ensure Java JDK is installed.")
+    except Exception as e:
+        print(f"{Colors.RED}Error running tests: {str(e)}{Colors.RESET}")
+
+
+# ============================================================================
+#  File Processing Functions
+# ============================================================================
+
+def extract_and_copy_java_files(folder_path, temp_dir):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Extract and Copy Java Files                                         ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Extracts zip files and recursively searches for Java files,         ║
+    ║  copying them to the temporary directory.                            ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      folder_path (str): Path to student's folder                     ║
+    ║      temp_dir (str): Path to temporary directory                     ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      str: Path to extracted folder for cleanup, or None              ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    for item in os.listdir(folder_path):
+        if item.endswith(('.zip', '.rar', '.7z')):
+            zip_path = os.path.join(folder_path, item)
+            extract_path = os.path.join(folder_path, 'extracted')
+            
+            print(f"Extracting: {item}")
+            
+            # Extract zip file
+            if item.endswith('.zip'):
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(extract_path)
+            
+            # Search recursively for Java files
+            java_files_found = 0
+            
+            for root, dirs, files in os.walk(extract_path):
+                # Ignore _MACOSX directory
+                if '_MACOSX' in root:
+                    continue
+                
+                for file in files:
+                    if file.endswith('.java'):
+                        src_file = os.path.join(root, file)
+                        dst_file = os.path.join(temp_dir, file)
+                        
+                        # Copy file (synchronous/blocking)
+                        shutil.copy2(src_file, dst_file)
+                        
+                        # Verify file was copied successfully
+                        if os.path.exists(dst_file):
+                            java_files_found += 1
+                            print(f"  Copied: {file}")
+                        else:
+                            print(f"  {Colors.RED}Failed to copy: {file}{Colors.RESET}")
+            
+            print(f"Total Java files found and copied: {java_files_found}")
+            
+            if java_files_found > 0:
+                print(f"{Colors.GREEN}All files copied successfully. Ready for compilation.{Colors.RESET}")
+            
+            return extract_path
+    
+    return None
+
+
+def collect_grades():
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Collect Grades from User                                            ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Prompts the user to enter grades for three tasks and a comment.     ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      tuple: (task1_grade, task2_grade, task3_grade, comment)         ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    print(f"\n{'='*80}")
+    print("Enter grades for this student:")
+    print(f"{'='*80}")
+    
+    task1_grade = input("Grade for Task 1: ").strip()
+    task2_grade = input("Grade for Task 2: ").strip()
+    task3_grade = input("Grade for Task 3: ").strip()
+    comment = input("Comment: ").strip()
+    
+    return task1_grade, task2_grade, task3_grade, comment
+
+
+def save_grades_to_csv(student_info, grades):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Save Grades to CSV                                                  ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Appends student grades to the CSV file. Creates file with headers   ║
+    ║  if it doesn't exist.                                                ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      student_info (dict): Student information                        ║
+    ║      grades (tuple): (task1, task2, task3, comment)                  ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    csv_file = os.path.join(Config.OUTPUT_DIR, Config.GRADES_CSV)
+    file_exists = os.path.exists(csv_file)
+    
+    with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        
+        # Write header if file is new
+        if not file_exists:
+            writer.writerow(['Student Name', 'Matriculation Nr', 'Task 1', 'Task 2', 'Task 3', 'Comment'])
+        
+        # Write student data
+        writer.writerow([
+            student_info['name'],
+            student_info['matriculation'],
+            grades[0],  # task1
+            grades[1],  # task2
+            grades[2],  # task3
+            grades[3]   # comment
+        ])
+    
+    print(f"{Colors.GREEN}Grades saved to {csv_file}{Colors.RESET}")
+
+
+def move_to_done_folder(folder_path):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Move to Done Folder                                                 ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Moves the processed student folder to the 'done' directory to       ║
+    ║  prevent reprocessing.                                               ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      folder_path (str): Path to student's folder                     ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    done_dir = os.path.join(Config.HOMEWORKS_DIR, Config.DONE_DIR)
+    if not os.path.exists(done_dir):
+        os.makedirs(done_dir)
+    
+    folder_name = os.path.basename(folder_path)
+    dest_path = os.path.join(done_dir, folder_name)
+    
+    # If destination exists, remove it first
+    if os.path.exists(dest_path):
+        shutil.rmtree(dest_path)
+    
+    shutil.move(folder_path, dest_path)
+    print(f"{Colors.GREEN}Moved student folder to 'done' directory{Colors.RESET}")
+
+
+def process_student_submission(student_info, temp_dir):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Process Student Submission (Main Orchestrator)                      ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Orchestrates the entire processing workflow for one student:        ║
+    ║  1. Clear and setup temp directory                                   ║
+    ║  2. Extract and copy Java files                                      ║
+    ║  3. Run JUnit tests                                                  ║
+    ║  4. Collect grades from user                                         ║
+    ║  5. Save grades to CSV                                               ║
+    ║  6. Move folder to 'done'                                            ║
+    ║  7. Cleanup temporary files                                          ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      student_info (dict): Student information                        ║
+    ║      temp_dir (str): Path to temporary directory                     ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    # Step 1: Setup
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+    os.makedirs(temp_dir)
+    
+    print(f"\n{'='*80}")
+    print(f"Processing: {student_info['name']} - {student_info['matriculation']}")
+    print(f"{'='*80}")
+    
+    folder_path = student_info['folder_path']
+    submission_type = student_info['submission_type']
+    extract_path_to_clean = None
+    
+    # Step 2: Extract and copy Java files if zipped submission
+    if submission_type == "Zipped file":
+        extract_path_to_clean = extract_and_copy_java_files(folder_path, temp_dir)
+    
+    # Step 3: Run JUnit tests if Java files were found
+    if os.path.exists(temp_dir) and os.listdir(temp_dir):
+        print(f"\n{'-'*80}")
+        print("Running JUnit tests...")
+        print(f"{'-'*80}")
+        run_junit_tests(temp_dir, student_info)
+    
+    # Step 4: Collect grades from user
+    grades = collect_grades()
+    
+    # Step 5: Save grades to CSV
+    save_grades_to_csv(student_info, grades)
+    
+    # Step 6: Move folder to done directory
+    move_to_done_folder(folder_path)
+    
+    # Step 7: Cleanup
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+        print(f"Cleared {temp_dir}")
+    
+    print()
+    input("Press Enter to continue to next student...")
+
+
+# ============================================================================
+#  Main Application Functions
+# ============================================================================
+
+def scan_submissions():
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Scan Submissions                                                    ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Scans the Homeworks directory and collects information about all    ║
+    ║  student submissions (excluding the 'done' folder).                  ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      list: List of student information dictionaries                  ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    students_data = []
+    
+    for folder_name in os.listdir(Config.HOMEWORKS_DIR):
+        folder_path = os.path.join(Config.HOMEWORKS_DIR, folder_name)
+        
+        # Skip the 'done' folder
+        if folder_name.lower() == Config.DONE_DIR:
+            continue
+        
+        # Check if it's a directory
+        if os.path.isdir(folder_path):
+            student_info = search_student_directory(folder_path, folder_name)
+            students_data.append(student_info)
+    
+    return students_data
+
+
+def display_submissions_table(students_data):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Display Submissions Table                                           ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Displays a formatted table showing all student submissions with     ║
+    ║  color-coded submission types.                                       ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      students_data (list): List of student information               ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    print("\n" + "="*80)
+    print(f"{'Student Name':<30} {'Matriculation Nr':<20} {'Submission Type':<30}")
+    print("="*80)
+    
+    for student in students_data:
+        color = student['color']
+        print(f"{student['name']:<30} {student['matriculation']:<20} {color}{student['submission_type']:<30}{Colors.RESET}")
+    
+    print("="*80 + "\n")
+
+
+def process_all_submissions(students_data):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Process All Submissions                                             ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Iterates through all student submissions and processes them one     ║
+    ║  by one with user interaction.                                       ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      students_data (list): List of student information               ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    temp_dir = Config.TEMP_DIR
+    
+    # Create temp directory initially
+    if not os.path.exists(temp_dir):
+        os.makedirs(temp_dir)
+    
+    # Process each student
+    for student in students_data:
+        process_student_submission(student, temp_dir)
+
+
+def main():
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Main Application Entry Point                                        ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Main workflow:                                                      ║
+    ║  1. Scan homework submissions                                        ║
+    ║  2. Display submissions table                                        ║
+    ║  3. Wait for user confirmation                                       ║
+    ║  4. Process all submissions sequentially                             ║
+    ║  5. Complete grading session                                         ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    print(f"\n{'='*80}")
+    print("  AUTOMATED JUNIT TESTING SYSTEM".center(80))
+    print(f"{'='*80}\n")
+    
+    # Step 1: Scan submissions
+    print("Scanning homework submissions...")
+    students_data = scan_submissions()
+    print(f"Found {len(students_data)} submission(s) to process.\n")
+    
+    if not students_data:
+        print(f"{Colors.YELLOW}No submissions found to process.{Colors.RESET}")
+        print(f"All submissions may already be in the '{Config.DONE_DIR}' folder.")
+        return
+    
+    # Step 2: Display table
+    display_submissions_table(students_data)
+    
+    # Step 3: Wait for confirmation
+    input("Press Enter to start grading submissions...")
+    
+    # Step 4: Process all submissions
+    process_all_submissions(students_data)
+    
+    # Step 5: Complete
+    print(f"\n{'='*80}")
+    print(f"{Colors.GREEN}Grading session completed!{Colors.RESET}".center(90))
+    print(f"Results saved to: {os.path.join(Config.OUTPUT_DIR, Config.GRADES_CSV)}")
+    print(f"{'='*80}\n")
+
+
+# ============================================================================
+#  Application Entry Point
+# ============================================================================
+
+if __name__ == "__main__":
+    main()
