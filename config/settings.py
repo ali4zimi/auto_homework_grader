@@ -1,7 +1,7 @@
 # Configuration settings for auto_junit
 
 # Java JDK Configuration
-JDK_BIN_PATH = r"C:\Program Files\JetBrains\IntelliJ IDEA 2025.2.4\jbr\bin"
+JDK_BIN_PATH = r"C:\Program Files\Java\jdk-25\bin"
 
 # Directory Paths
 HOMEWORKS_DIR = "Homeworks"

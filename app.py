@@ -34,7 +34,7 @@ class Colors:
 
 class Config:
     """Application configuration constants"""
-    JDK_BIN = r"C:\Program Files\JetBrains\IntelliJ IDEA 2025.2.4\jbr\bin"
+    JDK_BIN = r"C:\Program Files\Java\jdk-25\bin"
     HOMEWORKS_DIR = "Homeworks"
     TESTS_DIR = "tests"
     LIB_DIR = "lib"
@@ -44,7 +44,7 @@ class Config:
     TEST_FILE = "TestInTheSky.java"
     JUNIT_JAR = "junit-platform-console-standalone-1.14.1.jar"
     GRADES_CSV = "grades.csv"
-    JAVA_VERSION = "21"
+    JAVA_VERSION = "25"
 
 
 # ============================================================================
