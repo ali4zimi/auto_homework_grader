@@ -33,20 +33,72 @@ public class TestInTheSky {
         return normExpected.equals(normActual);
     }
 
+   // ---------- PARROT TESTS ----------
     @Test
     void testParrotFlyAndLand() {
-        try {
-            Parrot p = new Parrot();
+        Parrot p = new Parrot();
 
-            p.fly();
-            assertTrue(looselyMatches("I'm flying", getOutput()));
-            out.reset();
+        p.fly();
+        looselyMatches("I’m flying", getOutput());
+        out.reset();
 
-            p.land();
-            assertTrue(looselyMatches("I'm landing", getOutput()));
+        p.land();
+        looselyMatches("I’m landing", getOutput());
+    }
 
-        } catch (Exception e) {
-            fail("Test failed with exception: " + e.getMessage());
-        }
+    @Test
+    void testParrotObserveOnGround() {
+        Parrot p = new Parrot();
+        p.observeEnvironment();
+        looselyMatches("I am exploring the ground", getOutput());
+    }
+
+    @Test
+    void testParrotObserveInSky() {
+        Parrot p = new Parrot();
+        p.fly();
+        out.reset();
+        p.observeEnvironment();
+        looselyMatches("I am observeing the vast landscape below", getOutput());
+    }
+
+
+    // ---------- ITAKESPICTURES TESTS ----------
+    @Test
+    void testTakePictureTwice() {
+        ITakesPictures cam = new ITakesPictures();
+
+        cam.takePicture();
+        looselyMatches("Operation started", getOutput());
+        out.reset();
+
+        cam.takePicture();
+        looselyMatches("Operation started", getOutput());
+        out.reset();
+    }
+
+    @Test
+    void testMemoryFull() {
+        ITakesPictures cam = new ITakesPictures();
+
+        cam.takePicture(); out.reset();
+        cam.takePicture(); out.reset();
+        cam.takePicture();
+
+        looselyMatches("full capacity", getOutput());
+    }
+
+
+    // ---------- CAMERADRONE TESTS ----------
+    @Test
+    void testCameraDroneFlyLand() {
+        CameraDrone cd = new CameraDrone();
+
+        cd.fly();
+        looselyMatches("flying system activated", getOutput());
+        out.reset();
+
+        cd.land();
+        looselyMatches("landing system activated", getOutput());
     }
 }
