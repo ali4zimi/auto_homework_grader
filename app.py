@@ -40,6 +40,7 @@ class Config:
     LIB_DIR = "lib"
     OUTPUT_DIR = "output"
     TEMP_DIR = "temp_dir"
+    CURRENT_SUBMISSION_DIR = "current_submission"
     DONE_DIR = "done"
     TEST_FILE = "TestInTheSky.java"
     JUNIT_JAR = "junit-platform-console-standalone-1.14.1.jar"
@@ -241,26 +242,40 @@ def prepare_test_environment(temp_dir):
     return True
 
 
-def compile_java_files(temp_dir, javac_exe):
+def compile_java_files(temp_dir, current_submission_dir, javac_exe):
     """
     ╔══════════════════════════════════════════════════════════════════════╗
     ║  Compile Java Files                                                  ║
     ╠══════════════════════════════════════════════════════════════════════╣
-    ║  Compiles all Java files in the temporary directory with JUnit       ║
-    ║  in the classpath. Outputs .class files to a separate bin directory. ║
+    ║  Copies student files from current_submission to temp_dir,           ║
+    ║  then compiles all Java files with JUnit in the classpath.           ║
+    ║  Outputs .class files to a separate bin directory inside temp_dir.   ║
     ║                                                                      ║
     ║  Args:                                                               ║
     ║      temp_dir (str): Path to temporary directory                     ║
+    ║      current_submission_dir (str): Path to current submission        ║
     ║      javac_exe (str): Path to javac executable                       ║
     ║                                                                      ║
     ║  Returns:                                                            ║
     ║      tuple: (success: bool, bin_dir: str)                            ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
-    java_files = [f for f in os.listdir(temp_dir) if f.endswith('.java')]
-    if not java_files:
-        print("No Java files to compile.")
+    # Copy student files from current_submission to temp_dir
+    print(f"\nCopying files from {current_submission_dir} to {temp_dir}...")
+    student_files = [f for f in os.listdir(current_submission_dir) if f.endswith('.java')]
+    
+    if not student_files:
+        print("No Java files found in current_submission.")
         return False, None
+    
+    for file in student_files:
+        src = os.path.join(current_submission_dir, file)
+        dst = os.path.join(temp_dir, file)
+        shutil.copy2(src, dst)
+        print(f"  Copied: {file}")
+    
+    # Get all Java files in temp_dir (student files + test file)
+    java_files = [f for f in os.listdir(temp_dir) if f.endswith('.java')]
     
     # Create bin directory for compiled classes
     bin_dir = os.path.join(temp_dir, 'bin')
@@ -334,7 +349,7 @@ def execute_junit_tests(temp_dir, bin_dir, java_exe):
         return False
 
 
-def run_junit_tests(temp_dir, student_info):
+def run_junit_tests(temp_dir, current_submission_dir, student_info):
     """
     ╔══════════════════════════════════════════════════════════════════════╗
     ║  Run JUnit Tests (Main Orchestrator)                                 ║
@@ -343,10 +358,12 @@ def run_junit_tests(temp_dir, student_info):
     ║  1. Verify Java installation                                         ║
     ║  2. Prepare test environment                                         ║
     ║  3. Compile Java files to separate bin directory                     ║
-    ║  4. Execute JUnit tests                                              ║
+    ║  4. If compilation fails, prompt to recompile or continue            ║
+    ║  5. Execute JUnit tests                                              ║
     ║                                                                      ║
     ║  Args:                                                               ║
-    ║      temp_dir (str): Path to temporary directory                     ║
+    ║      temp_dir (str): Path to temporary compilation directory         ║
+    ║      current_submission_dir (str): Path to current submission dir    ║
     ║      student_info (dict): Student information                        ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
@@ -360,10 +377,43 @@ def run_junit_tests(temp_dir, student_info):
         if not prepare_test_environment(temp_dir):
             return
         
-        # Step 3: Compile Java files
-        success, bin_dir = compile_java_files(temp_dir, javac_exe)
-        if not success:
-            return
+        # Step 3: Compile Java files with recompilation loop
+        compilation_successful = False
+        bin_dir = None
+        
+        while not compilation_successful:
+            success, bin_dir = compile_java_files(temp_dir, current_submission_dir, javac_exe)
+            
+            if success:
+                compilation_successful = True
+            else:
+                # Compilation failed - ask user what to do
+                print(f"\n{Colors.YELLOW}{'='*80}{Colors.RESET}")
+                print(f"{Colors.YELLOW}Compilation failed! You can now manually fix errors in:{Colors.RESET}")
+                print(f"{Colors.BLUE}  {os.path.abspath(current_submission_dir)}{Colors.RESET}")
+                print(f"{Colors.YELLOW}{'='*80}{Colors.RESET}")
+                print("\nWhat would you like to do?")
+                print("  1. Recompile (after manual fixes)")
+                print("  2. Skip tests and continue to grading")
+                
+                choice = input("\nEnter your choice (1 or 2): ").strip()
+
+                while choice not in ['1', '2']:
+                    choice = input("Invalid choice. Please enter 1 or 2: ").strip()
+
+                if choice == '1':
+                    print(f"\n{Colors.BLUE}Retrying compilation...{Colors.RESET}")
+                    # Clean bin directory before recompiling
+                    bin_dir_path = os.path.join(temp_dir, 'bin')
+                    if os.path.exists(bin_dir_path):
+                        shutil.rmtree(bin_dir_path)
+                    continue
+                elif choice == '2':
+                    print(f"\n{Colors.YELLOW}Skipping tests, proceeding to grading...{Colors.RESET}")
+                    return
+                else:
+                    print(f"{Colors.RED}Invalid choice. Skipping tests...{Colors.RESET}")
+                    return
         
         # Step 4: Execute tests
         execute_junit_tests(temp_dir, bin_dir, java_exe)
@@ -379,17 +429,18 @@ def run_junit_tests(temp_dir, student_info):
 #  File Processing Functions
 # ============================================================================
 
-def extract_and_copy_java_files(folder_path, temp_dir):
+def extract_and_copy_java_files(folder_path, current_submission_dir):
     """
     ╔══════════════════════════════════════════════════════════════════════╗
     ║  Extract and Copy Java Files                                         ║
     ╠══════════════════════════════════════════════════════════════════════╣
     ║  Extracts zip files and recursively searches for Java files,         ║
-    ║  copying them to the temporary directory.                            ║
+    ║  copying them to the current_submission directory for review.        ║
+    ║  Files are writable and can be manually edited if needed.            ║
     ║                                                                      ║
     ║  Args:                                                               ║
     ║      folder_path (str): Path to student's folder                     ║
-    ║      temp_dir (str): Path to temporary directory                     ║
+    ║      current_submission_dir (str): Path to current submission dir    ║
     ║                                                                      ║
     ║  Returns:                                                            ║
     ║      str: Path to extracted folder for cleanup, or None              ║
@@ -418,10 +469,13 @@ def extract_and_copy_java_files(folder_path, temp_dir):
                 for file in files:
                     if file.endswith('.java'):
                         src_file = os.path.join(root, file)
-                        dst_file = os.path.join(temp_dir, file)
+                        dst_file = os.path.join(current_submission_dir, file)
                         
                         # Copy file (synchronous/blocking)
                         shutil.copy2(src_file, dst_file)
+                        
+                        # Remove read-only attribute
+                        os.chmod(dst_file, 0o666)
                         
                         # Verify file was copied successfully
                         if os.path.exists(dst_file):
@@ -433,7 +487,8 @@ def extract_and_copy_java_files(folder_path, temp_dir):
             print(f"Total Java files found and copied: {java_files_found}")
             
             if java_files_found > 0:
-                print(f"{Colors.GREEN}All files copied successfully. Ready for compilation.{Colors.RESET}")
+                print(f"{Colors.GREEN}Files extracted to: {current_submission_dir}{Colors.RESET}")
+                print(f"{Colors.GREEN}You can review/edit files before compilation.{Colors.RESET}")
             
             return extract_path
     
@@ -532,9 +587,9 @@ def process_student_submission(student_info, temp_dir):
     ║  Process Student Submission (Main Orchestrator)                      ║
     ╠══════════════════════════════════════════════════════════════════════╣
     ║  Orchestrates the entire processing workflow for one student:        ║
-    ║  1. Clear and setup temp directory                                   ║
-    ║  2. Extract and copy Java files                                      ║
-    ║  3. Run JUnit tests                                                  ║
+    ║  1. Clear and setup temp & current_submission directories            ║
+    ║  2. Extract and copy Java files to current_submission                ║
+    ║  3. Run JUnit tests (copies to temp_dir for compilation)             ║
     ║  4. Collect grades from user                                         ║
     ║  5. Save grades to CSV                                               ║
     ║  6. Move folder to 'done'                                            ║
@@ -542,13 +597,19 @@ def process_student_submission(student_info, temp_dir):
     ║                                                                      ║
     ║  Args:                                                               ║
     ║      student_info (dict): Student information                        ║
-    ║      temp_dir (str): Path to temporary directory                     ║
+    ║      temp_dir (str): Path to temporary compilation directory         ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
-    # Step 1: Setup
+    # Step 1: Setup directories
+    current_submission_dir = Config.CURRENT_SUBMISSION_DIR
+    
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
     os.makedirs(temp_dir)
+    
+    if os.path.exists(current_submission_dir):
+        shutil.rmtree(current_submission_dir)
+    os.makedirs(current_submission_dir)
     
     print(f"\n{'='*80}")
     print(f"Processing: {student_info['name']} - {student_info['matriculation']}")
@@ -558,16 +619,16 @@ def process_student_submission(student_info, temp_dir):
     submission_type = student_info['submission_type']
     extract_path_to_clean = None
     
-    # Step 2: Extract and copy Java files if zipped submission
+    # Step 2: Extract and copy Java files to current_submission
     if submission_type == "Zipped file":
-        extract_path_to_clean = extract_and_copy_java_files(folder_path, temp_dir)
+        extract_path_to_clean = extract_and_copy_java_files(folder_path, current_submission_dir)
     
     # Step 3: Run JUnit tests if Java files were found
-    if os.path.exists(temp_dir) and os.listdir(temp_dir):
+    if os.path.exists(current_submission_dir) and os.listdir(current_submission_dir):
         print(f"\n{'-'*80}")
         print("Running JUnit tests...")
         print(f"{'-'*80}")
-        run_junit_tests(temp_dir, student_info)
+        run_junit_tests(temp_dir, current_submission_dir, student_info)
     
     # Step 4: Collect grades from user
     grades = collect_grades()
@@ -582,6 +643,14 @@ def process_student_submission(student_info, temp_dir):
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
         print(f"Cleared {temp_dir}")
+    
+    if os.path.exists(current_submission_dir):
+        shutil.rmtree(current_submission_dir)
+        print(f"Cleared {current_submission_dir}")
+    
+    if extract_path_to_clean and os.path.exists(extract_path_to_clean):
+        shutil.rmtree(extract_path_to_clean)
+        print(f"Cleared extracted folder: {extract_path_to_clean}")
     
     print()
     input("Press Enter to continue to next student...")
