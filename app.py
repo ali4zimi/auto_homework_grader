@@ -551,7 +551,7 @@ def save_grades_to_csv(student_info, grades):
     csv_file = os.path.join(Config.OUTPUT_DIR, Config.GRADES_CSV)
     file_exists = os.path.exists(csv_file)
     
-    with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+    with open(csv_file, 'a', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f)
         
         # Write header if file is new
@@ -765,6 +765,9 @@ def main():
     ║  5. Complete grading session                                         ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
+    # Set console to UTF-8 encoding for special characters
+    subprocess.run(['chcp', '65001'], shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
     print(f"\n{'='*80}")
     print("  AUTOMATED JUNIT TESTING SYSTEM".center(80))
     print(f"{'='*80}\n")
