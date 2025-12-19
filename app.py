@@ -510,10 +510,27 @@ def collect_grades():
     print("Enter grades for this student:")
     print(f"{'='*80}")
     
-    task1_grade = input("Grade for Task 1: ").strip()
-    task2_grade = input("Grade for Task 2: ").strip()
-    task3_grade = input("Grade for Task 3: ").strip()
-    comment = input("Comment: ").strip()
+    task1_grade = ""
+    task2_grade = ""
+    task3_grade = ""
+    comment = "0"
+    
+    while comment == "b" or comment == "0":
+        while not (task1_grade.isdigit() and 0 <= int(task1_grade) <= 2):
+            task1_grade = input("Grade for Task 1: ").strip()
+        
+        while not (task2_grade.isdigit() and 0 <= int(task2_grade) <= 2):
+            task2_grade = input("Grade for Task 2: ").strip()
+
+        while not (task3_grade.isdigit() and 0 <= int(task3_grade) <= 2):
+            task3_grade = input("Grade for Task 3: ").strip()
+    
+        print("Enter an optional comment (type 'b' or '0' to re-enter grades):")
+        comment = input("Comment: ").strip()
+        if comment == "b" or comment == "0":
+            task1_grade = ""
+            task2_grade = ""
+            task3_grade = ""
     
     return task1_grade, task2_grade, task3_grade, comment
 
