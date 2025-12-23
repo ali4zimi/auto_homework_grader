@@ -1098,11 +1098,12 @@ def main():
     ╠══════════════════════════════════════════════════════════════════════╣
     ║  Main workflow:                                                      ║
     ║  1. Load configuration (triggers init if first run)                  ║
-    ║  2. Scan homework submissions                                        ║
-    ║  3. Display submissions table                                        ║
-    ║  4. Wait for user confirmation                                       ║
-    ║  5. Process all submissions sequentially                             ║
-    ║  6. Complete grading session                                         ║
+    ║  2. Create necessary directories if they don't exist                 ║
+    ║  3. Scan homework submissions                                        ║
+    ║  4. Display submissions table                                        ║
+    ║  5. Wait for user confirmation                                       ║
+    ║  6. Process all submissions sequentially                             ║
+    ║  7. Complete grading session                                         ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
     # Set console to UTF-8 encoding for special characters
@@ -1111,11 +1112,25 @@ def main():
     # Step 1: Load configuration (first-time setup if needed)
     load_config()
     
+    # Step 2: Create necessary directories if they don't exist
+    required_dirs = [
+        Config['HOMEWORKS_DIR'],
+        os.path.join(Config['HOMEWORKS_DIR'], Config['DONE_DIR']),
+        Config['OUTPUT_DIR'],
+        Config['LIB_DIR'],
+        Config['TESTS_DIR']
+    ]
+    
+    for directory in required_dirs:
+        if not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+            print(f"{Colors.GREEN}Created directory: {directory}/{Colors.RESET}")
+    
     print(f"\n{'='*80}")
     print("  AUTOMATED JUNIT TESTING SYSTEM".center(80))
     print(f"{'='*80}\n")
     
-    # Step 2: Scan submissions
+    # Step 3: Scan submissions
     print("Scanning homework submissions...")
     students_data = scan_submissions()
     print(f"Found {len(students_data)} submission(s) to process.\n")
@@ -1125,16 +1140,16 @@ def main():
         print(f"All submissions may already be in the '{Config['DONE_DIR']}' folder.")
         return
     
-    # Step 3: Display table
+    # Step 4: Display table
     display_submissions_table(students_data)
     
-    # Step 4: Wait for confirmation
+    # Step 5: Wait for confirmation
     input("Press Enter to start grading submissions...")
     
-    # Step 5: Process all submissions
+    # Step 6: Process all submissions
     process_all_submissions(students_data)
     
-    # Step 6: Complete
+    # Step 7: Complete
     print(f"\n{'='*80}")
     print(f"{Colors.GREEN}Grading session completed!{Colors.RESET}".center(90))
     print(f"Results saved to: {os.path.join(Config['OUTPUT_DIR'], Config['GRADES_CSV'])}")
