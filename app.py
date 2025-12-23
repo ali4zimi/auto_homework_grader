@@ -17,6 +17,7 @@ import zipfile
 import shutil
 import subprocess
 import csv
+from config import settings as Config
 
 
 # ============================================================================
@@ -30,22 +31,6 @@ class Colors:
     RED = '\033[91m'
     BLUE = '\033[94m'
     RESET = '\033[0m'
-
-
-class Config:
-    """Application configuration constants"""
-    JDK_BIN = r"C:\Program Files\Java\jdk-25\bin"
-    HOMEWORKS_DIR = "Homeworks"
-    TESTS_DIR = "tests"
-    LIB_DIR = "lib"
-    OUTPUT_DIR = "output"
-    TEMP_DIR = "temp_dir"
-    CURRENT_SUBMISSION_DIR = "current_submission"
-    DONE_DIR = "done"
-    TEST_FILE = "TestInTheSky.java"
-    JUNIT_JAR = "junit-platform-console-standalone-1.14.1.jar"
-    GRADES_CSV = "grades.csv"
-    JAVA_VERSION = "25"
 
 
 # ============================================================================
