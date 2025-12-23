@@ -17,7 +17,8 @@ import zipfile
 import shutil
 import subprocess
 import csv
-from config import settings as Config
+import json
+import glob
 
 
 # ============================================================================
@@ -31,6 +32,260 @@ class Colors:
     RED = '\033[91m'
     BLUE = '\033[94m'
     RESET = '\033[0m'
+
+
+CONFIG_FILE = 'config/settings.json'
+Config = {}
+
+
+# ============================================================================
+#  Configuration Management Functions
+# ============================================================================
+
+def load_config():
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Load Configuration                                                  ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Loads configuration from JSON file. If file doesn't exist,          ║
+    ║  triggers initialization phase. If file exists, asks user whether    ║
+    ║  to use current settings or reconfigure.                             ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      dict: Configuration dictionary                                  ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    global Config
+    
+    # If config file doesn't exist, run first-time setup
+    if not os.path.exists(CONFIG_FILE):
+        print(f"{Colors.YELLOW}Configuration file not found. Running first-time setup...{Colors.RESET}\n")
+        Config = init_setup()
+        return Config
+    
+    # Config file exists - ask user what to do
+    print(f"\n{Colors.BLUE}{'='*80}{Colors.RESET}")
+    print(f"{Colors.BLUE}  CONFIGURATION{Colors.RESET}".center(88))
+    print(f"{Colors.BLUE}{'='*80}{Colors.RESET}\n")
+    
+    print("What would you like to do?")
+    print(f"  1. {Colors.GREEN}Run with current settings{Colors.RESET}")
+    print(f"  2. {Colors.YELLOW}Reconfigure (run setup wizard){Colors.RESET}")
+    
+    while True:
+        choice = input("\nEnter your choice (1 or 2): ").strip()
+        if choice == '1':
+            # Load existing config
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                Config = json.load(f)
+            print(f"{Colors.GREEN}Using existing configuration.{Colors.RESET}\n")
+            return Config
+        elif choice == '2':
+            # Run setup wizard
+            print(f"\n{Colors.YELLOW}Starting reconfiguration...{Colors.RESET}\n")
+            Config = init_setup()
+            return Config
+        else:
+            print(f"{Colors.RED}Invalid choice. Please enter 1 or 2.{Colors.RESET}")
+
+
+
+def save_config(config):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Save Configuration                                                  ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Saves configuration dictionary to JSON file.                        ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      config (dict): Configuration dictionary to save                 ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    # Ensure config directory exists
+    os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+    
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=4)
+    
+    print(f"{Colors.GREEN}Configuration saved to {CONFIG_FILE}{Colors.RESET}\n")
+
+
+def find_java_jdk():
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Find Java JDK                                                       ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Attempts to automatically find Java JDK installations on Windows.   ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      list: List of found JDK bin paths                               ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    potential_paths = []
+    
+    # Check common JDK installation locations
+    common_locations = [
+        r"C:\Program Files\Java\*",
+        r"C:\Program Files (x86)\Java\*",
+        r"C:\Program Files\Eclipse Adoptium\*",
+        r"C:\Program Files\Microsoft\*"
+    ]
+    
+    for location_pattern in common_locations:
+        for jdk_dir in glob.glob(location_pattern):
+            bin_path = os.path.join(jdk_dir, 'bin')
+            if os.path.exists(bin_path):
+                java_exe = os.path.join(bin_path, 'java.exe')
+                javac_exe = os.path.join(bin_path, 'javac.exe')
+                if os.path.exists(java_exe) and os.path.exists(javac_exe):
+                    potential_paths.append(bin_path)
+    
+    return potential_paths
+
+
+def init_setup():
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Initialize Setup                                                    ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  First-time setup wizard that:                                       ║
+    ║  1. Asks for JDK path (with auto-detection)                          ║
+    ║  2. Scans and lists available test files                             ║
+    ║  3. Asks user to select test file                                    ║
+    ║  4. Creates required directories                                     ║
+    ║  5. Saves configuration to JSON                                      ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      dict: Configuration dictionary                                  ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    print(f"{Colors.BLUE}{'='*80}{Colors.RESET}")
+    print(f"{Colors.BLUE}  AUTOMATED JUNIT TESTING SYSTEM - FIRST TIME SETUP{Colors.RESET}".center(88))
+    print(f"{Colors.BLUE}{'='*80}{Colors.RESET}\n")
+    
+    config = {
+        'HOMEWORKS_DIR': 'Homeworks',
+        'TESTS_DIR': 'tests',
+        'LIB_DIR': 'lib',
+        'OUTPUT_DIR': 'output',
+        'TEMP_DIR': 'temp_dir',
+        'CURRENT_SUBMISSION_DIR': 'current_submission',
+        'DONE_DIR': 'done',
+        'JUNIT_JAR': 'junit-platform-console-standalone-1.14.1.jar',
+        'JAVA_VERSION': '21',
+        'ENABLE_PREVIEW': True,
+        'GRADES_CSV': 'grades.csv',
+        'CSV_HEADERS': ['Student Name', 'Matriculation Nr', 'Task 1', 'Task 2', 'Task 3', 'Comment'],
+        'IGNORE_DIRS': ['_MACOSX', 'extracted', 'done']
+    }
+    
+    # Step 1: Configure JDK Path
+    print(f"{Colors.YELLOW}[1/3] Java JDK Configuration{Colors.RESET}")
+    print("-" * 80)
+    
+    found_jdks = find_java_jdk()
+    
+    if found_jdks:
+        print(f"Found {len(found_jdks)} Java JDK installation(s):\n")
+        for idx, jdk_path in enumerate(found_jdks, 1):
+            print(f"  {idx}. {jdk_path}")
+        print(f"  {len(found_jdks) + 1}. Enter custom path")
+        
+        while True:
+            choice = input(f"\nSelect JDK (1-{len(found_jdks) + 1}): ").strip()
+            if choice.isdigit():
+                choice_num = int(choice)
+                if 1 <= choice_num <= len(found_jdks):
+                    config['JDK_BIN_PATH'] = found_jdks[choice_num - 1]
+                    print(f"{Colors.GREEN}Selected: {config['JDK_BIN_PATH']}{Colors.RESET}")
+                    break
+                elif choice_num == len(found_jdks) + 1:
+                    custom_path = input("Enter JDK bin path: ").strip().strip('"')
+                    if os.path.exists(os.path.join(custom_path, 'java.exe')):
+                        config['JDK_BIN_PATH'] = custom_path
+                        print(f"{Colors.GREEN}JDK path set to: {config['JDK_BIN_PATH']}{Colors.RESET}")
+                        break
+                    else:
+                        print(f"{Colors.RED}Invalid path. java.exe not found.{Colors.RESET}")
+            else:
+                print(f"{Colors.RED}Invalid selection. Please enter a number.{Colors.RESET}")
+    else:
+        print(f"{Colors.YELLOW}No JDK installations found automatically.{Colors.RESET}")
+        while True:
+            jdk_path = input("Enter JDK bin path (e.g., C:\\Program Files\\Java\\jdk-21\\bin): ").strip().strip('"')
+            if os.path.exists(os.path.join(jdk_path, 'java.exe')) and os.path.exists(os.path.join(jdk_path, 'javac.exe')):
+                config['JDK_BIN_PATH'] = jdk_path
+                print(f"{Colors.GREEN}JDK path set to: {config['JDK_BIN_PATH']}{Colors.RESET}")
+                break
+            else:
+                print(f"{Colors.RED}Invalid path. java.exe and javac.exe not found.{Colors.RESET}")
+    
+    # Step 2: Select Test File
+    print(f"\n{Colors.YELLOW}[2/3] Test File Selection{Colors.RESET}")
+    print("-" * 80)
+    
+    # Create tests directory if it doesn't exist
+    os.makedirs(config['TESTS_DIR'], exist_ok=True)
+    
+    # Find all Java test files
+    test_files = [f for f in os.listdir(config['TESTS_DIR']) if f.endswith('.java')] if os.path.exists(config['TESTS_DIR']) else []
+    
+    if test_files:
+        print(f"Found {len(test_files)} test file(s) in '{config['TESTS_DIR']}/' directory:\n")
+        for idx, test_file in enumerate(test_files, 1):
+            print(f"  {idx}. {test_file}")
+        
+        while True:
+            choice = input(f"\nSelect test file (1-{len(test_files)}): ").strip()
+            if choice.isdigit():
+                choice_num = int(choice)
+                if 1 <= choice_num <= len(test_files):
+                    config['TEST_FILE'] = test_files[choice_num - 1]
+                    print(f"{Colors.GREEN}Selected: {config['TEST_FILE']}{Colors.RESET}")
+                    break
+            print(f"{Colors.RED}Invalid selection. Please enter a number between 1 and {len(test_files)}.{Colors.RESET}")
+    else:
+        print(f"{Colors.YELLOW}No test files found in '{config['TESTS_DIR']}/' directory.{Colors.RESET}")
+        print(f"Please add your JUnit test files to the '{config['TESTS_DIR']}/' directory.")
+        test_file = input("Enter test file name (e.g., TestBank.java): ").strip()
+        config['TEST_FILE'] = test_file
+        print(f"{Colors.YELLOW}Test file set to: {config['TEST_FILE']}{Colors.RESET}")
+        print(f"{Colors.YELLOW}Warning: Make sure to add this file to '{config['TESTS_DIR']}/' before running grading.{Colors.RESET}")
+    
+    # Step 3: Create Required Directories
+    print(f"\n{Colors.YELLOW}[3/3] Creating Required Directories{Colors.RESET}")
+    print("-" * 80)
+    
+    required_dirs = [
+        config['HOMEWORKS_DIR'],
+        os.path.join(config['HOMEWORKS_DIR'], config['DONE_DIR']),
+        config['TESTS_DIR'],
+        config['LIB_DIR'],
+        config['OUTPUT_DIR']
+    ]
+    
+    for directory in required_dirs:
+        if not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+            print(f"{Colors.GREEN}✓ Created: {directory}/{Colors.RESET}")
+        else:
+            print(f"  Already exists: {directory}/")
+    
+    # Save configuration
+    print(f"\n{Colors.YELLOW}Saving configuration...{Colors.RESET}")
+    save_config(config)
+    
+    print(f"{Colors.GREEN}{'='*80}{Colors.RESET}")
+    print(f"{Colors.GREEN}Setup completed successfully!{Colors.RESET}".center(88))
+    print(f"{Colors.GREEN}{'='*80}{Colors.RESET}\n")
+    
+    print("Next steps:")
+    print(f"  1. Place student submissions in '{config['HOMEWORKS_DIR']}/' directory")
+    print(f"  2. Ensure JUnit JAR is in '{config['LIB_DIR']}/' directory")
+    print(f"  3. Ensure test file is in '{config['TESTS_DIR']}/' directory")
+    print(f"  4. Run 'python app.py' to start grading\n")
+    
+    return config
 
 
 # ============================================================================
@@ -182,12 +437,12 @@ def verify_java_installation():
     ║      tuple: (java_exe_path, javac_exe_path) or (None, None) if fail ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
-    java_exe = os.path.join(Config.JDK_BIN, "java.exe")
-    javac_exe = os.path.join(Config.JDK_BIN, "javac.exe")
+    java_exe = os.path.join(Config['JDK_BIN_PATH'], "java.exe")
+    javac_exe = os.path.join(Config['JDK_BIN_PATH'], "javac.exe")
     
     if not os.path.exists(java_exe) or not os.path.exists(javac_exe):
-        print(f"{Colors.RED}Java executables not found at: {Config.JDK_BIN}{Colors.RESET}")
-        print("Please verify the JDK path in config/settings.py")
+        print(f"{Colors.RED}Java executables not found at: {Config['JDK_BIN_PATH']}{Colors.RESET}")
+        print("Please verify the JDK path in config/settings.json")
         return None, None
     
     return java_exe, javac_exe
@@ -208,20 +463,20 @@ def prepare_test_environment(temp_dir):
     ╚══════════════════════════════════════════════════════════════════════╝
     """
     # Copy test file
-    test_path = os.path.join(Config.TESTS_DIR, Config.TEST_FILE)
+    test_path = os.path.join(Config['TESTS_DIR'], Config['TEST_FILE'])
     if not os.path.exists(test_path):
         print(f"{Colors.RED}Test file not found: {test_path}{Colors.RESET}")
         return False
     
-    shutil.copy2(test_path, os.path.join(temp_dir, Config.TEST_FILE))
-    print(f"Copied test file: {Config.TEST_FILE}")
+    shutil.copy2(test_path, os.path.join(temp_dir, Config['TEST_FILE']))
+    print(f"Copied test file: {Config['TEST_FILE']}")
     
     # Verify JUnit JAR exists
-    junit_jar_path = os.path.join(Config.LIB_DIR, Config.JUNIT_JAR)
+    junit_jar_path = os.path.join(Config['LIB_DIR'], Config['JUNIT_JAR'])
     if not os.path.exists(junit_jar_path):
         print(f"{Colors.YELLOW}JUnit JAR not found: {junit_jar_path}{Colors.RESET}")
-        print(f"Please download {Config.JUNIT_JAR}")
-        print(f"Place it in: {os.path.join(os.getcwd(), Config.LIB_DIR)}")
+        print(f"Please download {Config['JUNIT_JAR']}")
+        print(f"Place it in: {os.path.join(os.getcwd(), Config['LIB_DIR'])}")
         return False
     
     return True
@@ -271,12 +526,12 @@ def compile_java_files(temp_dir, current_submission_dir, javac_exe):
     print(f"Output directory: {bin_dir}")
     
     # Get JUnit JAR path from lib directory
-    junit_jar = os.path.join(Config.LIB_DIR, Config.JUNIT_JAR)
+    junit_jar = os.path.join(Config['LIB_DIR'], Config['JUNIT_JAR'])
     
     compile_cmd = [
         javac_exe, '-cp', f'{temp_dir};{junit_jar}',
         '-d', bin_dir,
-        '--enable-preview', '--source', Config.JAVA_VERSION
+        '--enable-preview', '--source', Config['JAVA_VERSION']
     ] + [os.path.join(temp_dir, f) for f in java_files]
     
     result = subprocess.run(compile_cmd, capture_output=True, text=True)
@@ -313,7 +568,7 @@ def execute_junit_tests(temp_dir, bin_dir, java_exe):
     subprocess.run(['chcp', '65001'], shell=True, capture_output=True)
     
     # Get JUnit JAR path from lib directory
-    junit_jar = os.path.join(Config.LIB_DIR, Config.JUNIT_JAR)
+    junit_jar = os.path.join(Config['LIB_DIR'], Config['JUNIT_JAR'])
     
     run_cmd = [
         java_exe, '-jar', junit_jar, 'execute',
@@ -533,7 +788,7 @@ def save_grades_to_csv(student_info, grades):
     ║      grades (tuple): (task1, task2, task3, comment)                  ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
-    csv_file = os.path.join(Config.OUTPUT_DIR, Config.GRADES_CSV)
+    csv_file = os.path.join(Config['OUTPUT_DIR'], Config['GRADES_CSV'])
     file_exists = os.path.exists(csv_file)
     
     with open(csv_file, 'a', newline='', encoding='utf-8-sig') as f:
@@ -568,7 +823,7 @@ def move_to_done_folder(folder_path):
     ║      folder_path (str): Path to student's folder                     ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
-    done_dir = os.path.join(Config.HOMEWORKS_DIR, Config.DONE_DIR)
+    done_dir = os.path.join(Config['HOMEWORKS_DIR'], Config['DONE_DIR'])
     if not os.path.exists(done_dir):
         os.makedirs(done_dir)
     
@@ -603,7 +858,7 @@ def process_student_submission(student_info, temp_dir):
     ╚══════════════════════════════════════════════════════════════════════╝
     """
     # Step 1: Setup directories
-    current_submission_dir = Config.CURRENT_SUBMISSION_DIR
+    current_submission_dir = Config['CURRENT_SUBMISSION_DIR']
     
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
@@ -676,11 +931,11 @@ def scan_submissions():
     """
     students_data = []
     
-    for folder_name in os.listdir(Config.HOMEWORKS_DIR):
-        folder_path = os.path.join(Config.HOMEWORKS_DIR, folder_name)
+    for folder_name in os.listdir(Config['HOMEWORKS_DIR']):
+        folder_path = os.path.join(Config['HOMEWORKS_DIR'], folder_name)
         
         # Skip the 'done' folder
-        if folder_name.lower() == Config.DONE_DIR:
+        if folder_name.lower() == Config['DONE_DIR']:
             continue
         
         # Check if it's a directory
@@ -726,7 +981,7 @@ def process_all_submissions(students_data):
     ║      students_data (list): List of student information               ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
-    temp_dir = Config.TEMP_DIR
+    temp_dir = Config['TEMP_DIR']
     
     # Create temp directory initially
     if not os.path.exists(temp_dir):
@@ -743,43 +998,47 @@ def main():
     ║  Main Application Entry Point                                        ║
     ╠══════════════════════════════════════════════════════════════════════╣
     ║  Main workflow:                                                      ║
-    ║  1. Scan homework submissions                                        ║
-    ║  2. Display submissions table                                        ║
-    ║  3. Wait for user confirmation                                       ║
-    ║  4. Process all submissions sequentially                             ║
-    ║  5. Complete grading session                                         ║
+    ║  1. Load configuration (triggers init if first run)                  ║
+    ║  2. Scan homework submissions                                        ║
+    ║  3. Display submissions table                                        ║
+    ║  4. Wait for user confirmation                                       ║
+    ║  5. Process all submissions sequentially                             ║
+    ║  6. Complete grading session                                         ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
     # Set console to UTF-8 encoding for special characters
     subprocess.run(['chcp', '65001'], shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
+    # Step 1: Load configuration (first-time setup if needed)
+    load_config()
+    
     print(f"\n{'='*80}")
     print("  AUTOMATED JUNIT TESTING SYSTEM".center(80))
     print(f"{'='*80}\n")
     
-    # Step 1: Scan submissions
+    # Step 2: Scan submissions
     print("Scanning homework submissions...")
     students_data = scan_submissions()
     print(f"Found {len(students_data)} submission(s) to process.\n")
     
     if not students_data:
         print(f"{Colors.YELLOW}No submissions found to process.{Colors.RESET}")
-        print(f"All submissions may already be in the '{Config.DONE_DIR}' folder.")
+        print(f"All submissions may already be in the '{Config['DONE_DIR']}' folder.")
         return
     
-    # Step 2: Display table
+    # Step 3: Display table
     display_submissions_table(students_data)
     
-    # Step 3: Wait for confirmation
+    # Step 4: Wait for confirmation
     input("Press Enter to start grading submissions...")
     
-    # Step 4: Process all submissions
+    # Step 5: Process all submissions
     process_all_submissions(students_data)
     
-    # Step 5: Complete
+    # Step 6: Complete
     print(f"\n{'='*80}")
     print(f"{Colors.GREEN}Grading session completed!{Colors.RESET}".center(90))
-    print(f"Results saved to: {os.path.join(Config.OUTPUT_DIR, Config.GRADES_CSV)}")
+    print(f"Results saved to: {os.path.join(Config['OUTPUT_DIR'], Config['GRADES_CSV'])}")
     print(f"{'='*80}\n")
 
 
