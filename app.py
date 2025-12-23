@@ -947,17 +947,29 @@ def process_student_submission(student_info, temp_dir):
     if submission_type == "Zipped file":
         extract_path_to_clean = extract_and_copy_java_files(folder_path, current_submission_dir)
     elif submission_type == "Folder":
-        # For folder submissions, copy Java files directly
-        print(f"Copying Java files from folder submission...")
-        java_files = [f for f in os.listdir(folder_path) if f.endswith('.java')]
-        for java_file in java_files:
-            src = os.path.join(folder_path, java_file)
-            dst = os.path.join(current_submission_dir, java_file)
-            shutil.copy2(src, dst)
-            os.chmod(dst, 0o666)
-            print(f"  Copied: {java_file}")
+        # For folder submissions, search recursively for Java files
+        print(f"Searching for Java files in folder submission...")
+        java_files_found = 0
         
-        if java_files:
+        for root, dirs, files in os.walk(folder_path):
+            # Ignore _MACOSX and other system directories
+            if '_MACOSX' in root or any(ignored in root for ignored in Config['IGNORE_DIRS']):
+                continue
+            
+            for file in files:
+                if file.endswith('.java'):
+                    src = os.path.join(root, file)
+                    dst = os.path.join(current_submission_dir, file)
+                    
+                    # Copy file
+                    shutil.copy2(src, dst)
+                    os.chmod(dst, 0o666)
+                    java_files_found += 1
+                    print(f"  Copied: {file}")
+        
+        print(f"Total Java files found and copied: {java_files_found}")
+        
+        if java_files_found > 0:
             print(f"{Colors.GREEN}Files copied to: {current_submission_dir}{Colors.RESET}")
             # Remove package declarations from copied files
             print(f"\nRemoving package declarations...")
