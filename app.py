@@ -669,6 +669,64 @@ def run_junit_tests(temp_dir, current_submission_dir, student_info):
 #  File Processing Functions
 # ============================================================================
 
+def remove_package_declarations(directory):
+    """
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║  Remove Package Declarations                                         ║
+    ╠══════════════════════════════════════════════════════════════════════╣
+    ║  Scans all Java files in the directory and removes package           ║
+    ║  declarations to avoid compilation errors when compiling files       ║
+    ║  outside their original package structure.                           ║
+    ║                                                                      ║
+    ║  Args:                                                               ║
+    ║      directory (str): Path to directory containing Java files        ║
+    ║                                                                      ║
+    ║  Returns:                                                            ║
+    ║      int: Number of files modified                                   ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+    """
+    if not os.path.exists(directory):
+        return 0
+    
+    files_modified = 0
+    java_files = [f for f in os.listdir(directory) if f.endswith('.java')]
+    
+    for java_file in java_files:
+        file_path = os.path.join(directory, java_file)
+        
+        try:
+            # Read file content
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Check for package declaration and remove it
+            modified = False
+            new_lines = []
+            
+            for line in lines:
+                # Check if line contains package declaration
+                stripped = line.strip()
+                if stripped.startswith('package ') and stripped.endswith(';'):
+                    print(f"  Removed package declaration from: {java_file}")
+                    print(f"    {stripped}")
+                    modified = True
+                    # Skip this line (don't add to new_lines)
+                    continue
+                else:
+                    new_lines.append(line)
+            
+            # Write back if modified
+            if modified:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.writelines(new_lines)
+                files_modified += 1
+        
+        except Exception as e:
+            print(f"{Colors.YELLOW}Warning: Could not process {java_file}: {str(e)}{Colors.RESET}")
+    
+    return files_modified
+
+
 def extract_and_copy_java_files(folder_path, current_submission_dir):
     """
     ╔══════════════════════════════════════════════════════════════════════╗
@@ -728,6 +786,15 @@ def extract_and_copy_java_files(folder_path, current_submission_dir):
             
             if java_files_found > 0:
                 print(f"{Colors.GREEN}Files extracted to: {current_submission_dir}{Colors.RESET}")
+                
+                # Remove package declarations from extracted files
+                print(f"\nRemoving package declarations...")
+                modified_count = remove_package_declarations(current_submission_dir)
+                if modified_count > 0:
+                    print(f"{Colors.GREEN}✓ Removed package declarations from {modified_count} file(s){Colors.RESET}")
+                else:
+                    print(f"  No package declarations found")
+                
                 print(f"{Colors.GREEN}You can review/edit files before compilation.{Colors.RESET}")
             
             return extract_path
@@ -879,6 +946,26 @@ def process_student_submission(student_info, temp_dir):
     # Step 2: Extract and copy Java files to current_submission
     if submission_type == "Zipped file":
         extract_path_to_clean = extract_and_copy_java_files(folder_path, current_submission_dir)
+    elif submission_type == "Folder":
+        # For folder submissions, copy Java files directly
+        print(f"Copying Java files from folder submission...")
+        java_files = [f for f in os.listdir(folder_path) if f.endswith('.java')]
+        for java_file in java_files:
+            src = os.path.join(folder_path, java_file)
+            dst = os.path.join(current_submission_dir, java_file)
+            shutil.copy2(src, dst)
+            os.chmod(dst, 0o666)
+            print(f"  Copied: {java_file}")
+        
+        if java_files:
+            print(f"{Colors.GREEN}Files copied to: {current_submission_dir}{Colors.RESET}")
+            # Remove package declarations from copied files
+            print(f"\nRemoving package declarations...")
+            modified_count = remove_package_declarations(current_submission_dir)
+            if modified_count > 0:
+                print(f"{Colors.GREEN}✓ Removed package declarations from {modified_count} file(s){Colors.RESET}")
+            else:
+                print(f"  No package declarations found")
     
     # Step 3: Run JUnit tests if Java files were found
     if os.path.exists(current_submission_dir) and os.listdir(current_submission_dir):
