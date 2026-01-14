@@ -130,13 +130,16 @@ def find_java_jdk():
         r"C:\Program Files\Eclipse Adoptium\*",
         r"C:\Program Files\Microsoft\*"
     ]
+
+    is_windows = os.name == "nt"
+    suffix = ".exe" if is_windows else ""
     
     for location_pattern in common_locations:
         for jdk_dir in glob.glob(location_pattern):
             bin_path = os.path.join(jdk_dir, 'bin')
             if os.path.exists(bin_path):
-                java_exe = os.path.join(bin_path, 'java.exe')
-                javac_exe = os.path.join(bin_path, 'javac.exe')
+                java_exe = os.path.join(bin_path, 'java' + suffix)
+                javac_exe = os.path.join(bin_path, 'javac' + suffix)
                 if os.path.exists(java_exe) and os.path.exists(javac_exe):
                     potential_paths.append(bin_path)
     
@@ -184,6 +187,8 @@ def init_setup():
     print("-" * 80)
     
     found_jdks = find_java_jdk()
+    is_windows = os.name == "nt"
+    suffix = ".exe" if is_windows else ""
     
     if found_jdks:
         print(f"Found {len(found_jdks)} Java JDK installation(s):\n")
@@ -201,7 +206,7 @@ def init_setup():
                     break
                 elif choice_num == len(found_jdks) + 1:
                     custom_path = input("Enter JDK bin path: ").strip().strip('"')
-                    if os.path.exists(os.path.join(custom_path, 'java.exe')):
+                    if os.path.exists(os.path.join(custom_path, 'java' + suffix)):
                         config['JDK_BIN_PATH'] = custom_path
                         print(f"{Colors.GREEN}JDK path set to: {config['JDK_BIN_PATH']}{Colors.RESET}")
                         break
@@ -213,7 +218,7 @@ def init_setup():
         print(f"{Colors.YELLOW}No JDK installations found automatically.{Colors.RESET}")
         while True:
             jdk_path = input("Enter JDK bin path (e.g., C:\\Program Files\\Java\\jdk-21\\bin): ").strip().strip('"')
-            if os.path.exists(os.path.join(jdk_path, 'java.exe')) and os.path.exists(os.path.join(jdk_path, 'javac.exe')):
+            if os.path.exists(os.path.join(jdk_path, 'java' + suffix)) and os.path.exists(os.path.join(jdk_path, 'javac' + suffix)):
                 config['JDK_BIN_PATH'] = jdk_path
                 print(f"{Colors.GREEN}JDK path set to: {config['JDK_BIN_PATH']}{Colors.RESET}")
                 break
@@ -437,8 +442,11 @@ def verify_java_installation():
     ║      tuple: (java_exe_path, javac_exe_path) or (None, None) if fail ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
-    java_exe = os.path.join(Config['JDK_BIN_PATH'], "java.exe")
-    javac_exe = os.path.join(Config['JDK_BIN_PATH'], "javac.exe")
+    is_windows = os.name == "nt"
+    suffix = ".exe" if is_windows else ""
+
+    java_exe = os.path.join(Config['JDK_BIN_PATH'], "java"+ suffix)
+    javac_exe = os.path.join(Config['JDK_BIN_PATH'], "javac"+ suffix)
     
     if not os.path.exists(java_exe) or not os.path.exists(javac_exe):
         print(f"{Colors.RED}Java executables not found at: {Config['JDK_BIN_PATH']}{Colors.RESET}")
