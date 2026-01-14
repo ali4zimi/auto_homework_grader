@@ -712,6 +712,12 @@ def remove_package_declarations(directory):
                     modified = True
                     # Skip this line (don't add to new_lines)
                     continue
+                elif stripped.startswith("import ") and stripped.endswith(';'):
+                    print(f"  Removed import declaration from: {java_file}")
+                    print(f"    {stripped}")
+                    modified = True
+                    # Skip this line (don't add to new_lines)
+                    continue
                 else:
                     new_lines.append(line)
             
@@ -859,7 +865,7 @@ def save_grades_to_csv(student_info, grades):
     file_exists = os.path.exists(csv_file)
     
     with open(csv_file, 'a', newline='', encoding='utf-8-sig') as f:
-        writer = csv.writer(f)
+        writer = csv.writer(f, delimiter=';')
         
         # Write header if file is new
         if not file_exists:
